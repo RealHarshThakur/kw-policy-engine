@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	kubewarden_protocol "github.com/kubewarden/policy-sdk-go/protocol"
 	"github.com/wapc/wapc-go"
@@ -15,10 +14,9 @@ import (
 
 func main() {
 	// Define command line flags
-	requestFile := flag.String("r", "", "Path to the JSON file containing the validation request object")
+	requestFile := flag.String("r", "", "Path to the JSON file containing the Kubernetes request payload")
 	settingsJSON := flag.String("settings-json", "{}", "Settings JSON as a string")
 
-	// Parse command line flags
 	flag.Parse()
 
 	ctx := context.Background()
@@ -28,7 +26,6 @@ func main() {
 	}
 
 	engine := wazero.Engine()
-
 	module, err := engine.New(ctx, host, guest, &wapc.ModuleConfig{
 		Logger: wapc.PrintlnLogger,
 		Stdout: os.Stdout,
@@ -45,24 +42,21 @@ func main() {
 	}
 	defer instance.Close(ctx)
 
-	// Initialize validation request
+	// Initialize validation request structure
 	kreq := kubewarden_protocol.ValidationRequest{}
 
-	// Read validation request from file if specified
+	// Read Kubernetes admission-style request JSON into kreq.Request
 	if *requestFile != "" {
 		fileContent, err := os.ReadFile(*requestFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", *requestFile, err)
 			os.Exit(1)
 		}
-
-		var req json.RawMessage
-		// Parse the JSON directly into the ValidationRequest
-		if err := json.Unmarshal(fileContent, &req); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing JSON from file: %v\n", err)
+		// Unmarshal directly into the Request field
+		if err := json.Unmarshal(fileContent, &kreq.Request); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing request JSON: %v\n", err)
 			os.Exit(1)
 		}
-		kreq.Request.Object = req
 	}
 
 	// Parse settings JSON
@@ -78,8 +72,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("%v\n", string(reqBytes))
-
+	// Invoke guest
 	result, err := instance.Invoke(ctx, "validate", reqBytes)
 	if err != nil {
 		panic(err)
@@ -89,16 +82,6 @@ func main() {
 }
 
 func host(ctx context.Context, binding, namespace, operation string, payload []byte) ([]byte, error) {
-	// Route the payload to any custom functionality accordingly.
-	// You can even route to other waPC modules!!!
-	switch namespace {
-	case "example":
-		switch operation {
-		case "capitalize":
-			name := string(payload)
-			name = strings.Title(name)
-			return []byte(name), nil
-		}
-	}
-	return []byte("default"), nil
+	// Minimal stub: ignore host calls
+	return []byte{}, nil
 }
